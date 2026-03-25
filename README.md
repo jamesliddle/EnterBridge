@@ -73,12 +73,11 @@ Key decision: prices are **snapshotted** into OrderItem at order creation time, 
 
 ## What I'd Do Next
 
-1. **Real-time price alerts** -- notify when a frequently-ordered product drops in price
-2. **Proper auth** -- integrate with Azure AD or similar for role-based access (procurement vs. foreman)
-3. **EF Core migrations** -- replace `EnsureCreated` for production schema management
-4. **Automated tests** -- unit tests for the API client service, integration tests for order CRUD
-5. **Better charting** -- Chart.js or similar for interactive price trend visualization
-6. **Order export** -- PDF or CSV export for the foreman's records
+1. There appears to be a deserialization issue with some product info text where backslashes are being used for quotation marks and other characters.
+2. **Real-time price alerts** -- notify when a frequently-ordered product drops in price
+3. **Proper auth** -- integrate with Azure AD or similar for role-based access (procurement vs. foreman)
+4. **Better charting** -- Chart.js or similar for interactive price trend visualization
+5. **Order export** -- PDF or CSV export for the foreman's records
 
 ## AI Tools Used
 
