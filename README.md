@@ -73,13 +73,12 @@ Key decision: prices are **snapshotted** into OrderItem at order creation time, 
 
 ## What I'd Do Next
 
-1. **Quick reorder** -- "Reorder" button on past orders, favorites/saved product lists
-2. **Real-time price alerts** -- notify when a frequently-ordered product drops in price
-3. **Proper auth** -- integrate with Azure AD or similar for role-based access (procurement vs. foreman)
-4. **EF Core migrations** -- replace `EnsureCreated` for production schema management
-5. **Automated tests** -- unit tests for the API client service, integration tests for order CRUD
-6. **Better charting** -- Chart.js or similar for interactive price trend visualization
-7. **Order export** -- PDF or CSV export for the foreman's records
+1. **Real-time price alerts** -- notify when a frequently-ordered product drops in price
+2. **Proper auth** -- integrate with Azure AD or similar for role-based access (procurement vs. foreman)
+3. **EF Core migrations** -- replace `EnsureCreated` for production schema management
+4. **Automated tests** -- unit tests for the API client service, integration tests for order CRUD
+5. **Better charting** -- Chart.js or similar for interactive price trend visualization
+6. **Order export** -- PDF or CSV export for the foreman's records
 
 ## AI Tools Used
 
