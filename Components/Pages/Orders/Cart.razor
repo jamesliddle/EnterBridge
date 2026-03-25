@@ -1,0 +1,143 @@
+@page "/cart"
+@rendermode InteractiveServer
+@inject EnterBridge.Services.CartService CartService
+@inject EnterBridge.Data.AppDbContext Db
+@inject NavigationManager Nav
+
+<PageTitle>Cart - EnterBridge</PageTitle>
+
+<h2 class="mb-3">Shopping Cart</h2>
+
+@if (!CartService.Items.Any())
+{
+    <div class="alert alert-info">
+        Your cart is empty. <a href="/">Browse products</a> to add items.
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Product</th>
+                    <th>SKU</th>
+                    <th class="text-end">Unit Price</th>
+                    <th style="width: 120px">Qty</th>
+                    <th class="text-end">Line Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in CartService.Items)
+                {
+                    <tr>
+                        <td>
+                            <strong>@item.Product.Name</strong>
+                            <br /><span class="text-muted small">@item.Product.Category</span>
+                        </td>
+                        <td class="text-muted small">@item.Product.Sku</td>
+                        <td class="text-end">$@item.Price.Amount.ToString("N2") <span class="text-muted small">/ @item.Price.UnitOfMeasure</span></td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm" min="1"
+                                   value="@item.Quantity"
+                                   @onchange="@(e => CartService.UpdateQuantity(item.Product.Id, int.TryParse(e.Value?.ToString(), out var v) ? v : 1))" />
+                        </td>
+                        <td class="text-end fw-bold">$@item.LineTotal.ToString("N2")</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => CartService.RemoveItem(item.Product.Id)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr class="table-light">
+                    <td colspan="4" class="text-end fw-bold">Total:</td>
+                    <td class="text-end fw-bold fs-5">$@CartService.Total.ToString("N2")</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-body">
+            <h5>Submit Order</h5>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">Your Name</label>
+                    <input type="text" class="form-control" @bind="userName" placeholder="Enter your name" />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Notes (optional)</label>
+                    <input type="text" class="form-control" @bind="orderNotes" placeholder="Any notes for this order" />
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-primary w-100" @onclick="SubmitOrder" disabled="@(string.IsNullOrWhiteSpace(userName) || submitting)">
+                        @if (submitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Submit Order
+                    </button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger mt-2">@errorMessage</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private string userName = "";
+    private string? orderNotes;
+    private bool submitting;
+    private string? errorMessage;
+
+    private async Task SubmitOrder()
+    {
+        if (string.IsNullOrWhiteSpace(userName)) return;
+
+        submitting = true;
+        errorMessage = null;
+
+        try
+        {
+            var order = new EnterBridge.Models.Order
+            {
+                SubmittedBy = userName.Trim(),
+                Notes = orderNotes,
+                CreatedAt = DateTime.UtcNow,
+                Status = EnterBridge.Models.OrderStatus.Submitted,
+                Items = CartService.Items.Select(i => new EnterBridge.Models.OrderItem
+                {
+                    ProductId = i.Product.Id,
+                    ProductName = i.Product.Name,
+                    ProductSku = i.Product.Sku,
+                    Category = i.Product.Category,
+                    UnitPrice = i.Price.Amount,
+                    UnitOfMeasure = i.Price.UnitOfMeasure,
+                    Quantity = i.Quantity
+                }).ToList()
+            };
+
+            Db.Orders.Add(order);
+            await Db.SaveChangesAsync();
+
+            CartService.Clear();
+            Nav.NavigateTo($"/orders/{order.Id}");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Failed to submit order: " + ex.Message;
+        }
+        finally
+        {
+            submitting = false;
+        }
+    }
+}

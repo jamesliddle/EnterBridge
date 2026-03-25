@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="EnterBridge.csproj" />
+  <Project Path="EnterBridge.Tests/EnterBridge.Tests.csproj" />
+</Solution>

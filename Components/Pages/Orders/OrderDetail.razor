@@ -1,0 +1,291 @@
+@page "/orders/{OrderId:int}"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@inject EnterBridge.Data.AppDbContext Db
+@inject EnterBridge.Services.EnterBridgeApiClient Api
+@inject EnterBridge.Services.CartService Cart
+@inject NavigationManager Nav
+
+<PageTitle>Order Detail - EnterBridge</PageTitle>
+
+@if (order == null)
+{
+    <div class="text-center py-5"><div class="spinner-border" role="status"></div></div>
+}
+else
+{
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/orders">Orders</a></li>
+            <li class="breadcrumb-item active">Order #@order.Id</li>
+        </ol>
+    </nav>
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Order #@order.Id</h5>
+                    <span class="badge @GetStatusBadge(order.Status) fs-6">@order.Status</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th>SKU</th>
+                                    <th class="text-end">Unit Price</th>
+                                    <th style="width: 100px">Qty</th>
+                                    <th class="text-end">Line Total</th>
+                                    <th style="width: 120px">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in order.Items)
+                                {
+                                    <tr class="@(item.IsRejected ? "table-danger text-decoration-line-through" : "")">
+                                        <td>
+                                            <strong>@item.ProductName</strong>
+                                            <br /><span class="text-muted small">@item.Category</span>
+                                            @if (item.IsRejected && !string.IsNullOrEmpty(item.RejectionReason))
+                                            {
+                                                <br /><span class="text-danger small" style="text-decoration: none; display: inline-block;"><i class="bi bi-x-circle"></i> @item.RejectionReason</span>
+                                            }
+                                        </td>
+                                        <td class="small text-muted">@item.ProductSku</td>
+                                        <td class="text-end">$@item.UnitPrice.ToString("N2")<br /><span class="text-muted small">per @item.UnitOfMeasure</span></td>
+                                        <td>
+                                            @if (CanEdit && !item.IsRejected)
+                                            {
+                                                <input type="number" class="form-control form-control-sm" min="1"
+                                                       value="@item.Quantity"
+                                                       @onchange="@(e => UpdateQuantity(item, int.TryParse(e.Value?.ToString(), out var v) ? v : 1))" />
+                                            }
+                                            else
+                                            {
+                                                @item.Quantity
+                                            }
+                                        </td>
+                                        <td class="text-end fw-bold">
+                                            @if (!item.IsRejected)
+                                            {
+                                                @($"${item.LineTotal:N2}")
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (CanEdit)
+                                            {
+                                                @if (!item.IsRejected)
+                                                {
+                                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => RejectItem(item)"
+                                                            title="Reject this item">
+                                                        <i class="bi bi-x-lg"></i> Reject
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => RestoreItem(item)"
+                                                            title="Restore this item">
+                                                        <i class="bi bi-arrow-counterclockwise"></i>
+                                                    </button>
+                                                }
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr class="table-light">
+                                    <td colspan="4" class="text-end fw-bold">Order Total:</td>
+                                    <td class="text-end fw-bold fs-5">$@order.Total.ToString("N2")</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card shadow-sm mb-3">
+                <div class="card-body">
+                    <h6>Order Info</h6>
+                    <dl class="mb-0">
+                        <dt class="text-muted small">Submitted By</dt>
+                        <dd>@order.SubmittedBy</dd>
+                        <dt class="text-muted small">Date</dt>
+                        <dd>@order.CreatedAt.ToString("MMM dd, yyyy h:mm tt")</dd>
+                        @if (!string.IsNullOrEmpty(order.Notes))
+                        {
+                            <dt class="text-muted small">Notes</dt>
+                            <dd>@order.Notes</dd>
+                        }
+                        @if (!string.IsNullOrEmpty(order.ReviewedBy))
+                        {
+                            <dt class="text-muted small">Reviewed By</dt>
+                            <dd>@order.ReviewedBy</dd>
+                        }
+                    </dl>
+                    <button class="btn btn-outline-success w-100 mt-3" @onclick="Reorder" disabled="@reordering">
+                        @if (reordering)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        <i class="bi bi-arrow-repeat"></i> Reorder These Items
+                    </button>
+                </div>
+            </div>
+
+            @if (CanEdit)
+            {
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h6>Foreman Review</h6>
+                        <div class="mb-3">
+                            <label class="form-label">Reviewer Name</label>
+                            <input type="text" class="form-control" @bind="reviewerName" placeholder="Your name" />
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-success" @onclick="ApproveOrder"
+                                    disabled="@(string.IsNullOrWhiteSpace(reviewerName) || saving)">
+                                <i class="bi bi-check-lg"></i> Approve Order
+                            </button>
+                            <button class="btn btn-danger" @onclick="RejectOrder"
+                                    disabled="@(string.IsNullOrWhiteSpace(reviewerName) || saving)">
+                                <i class="bi bi-x-lg"></i> Reject Entire Order
+                            </button>
+                        </div>
+                        @if (!string.IsNullOrEmpty(message))
+                        {
+                            <div class="alert alert-info mt-2 py-1 small">@message</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (showRejectModal)
+{
+    <div class="modal show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reject Item</h5>
+                    <button type="button" class="btn-close" @onclick="() => showRejectModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Reject <strong>@rejectingItem?.ProductName</strong>?</p>
+                    <label class="form-label">Reason (optional)</label>
+                    <input type="text" class="form-control" @bind="rejectReason" placeholder="e.g. Wrong size, not needed" />
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showRejectModal = false">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmRejectItem">Reject</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int OrderId { get; set; }
+
+    private EnterBridge.Models.Order? order;
+    private string reviewerName = "";
+    private string? message;
+    private bool saving;
+    private bool reordering;
+    private bool showRejectModal;
+    private EnterBridge.Models.OrderItem? rejectingItem;
+    private string? rejectReason;
+
+    private bool CanEdit => order?.Status == EnterBridge.Models.OrderStatus.Submitted;
+
+    protected override async Task OnInitializedAsync()
+    {
+        order = await Db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == OrderId);
+    }
+
+    private void UpdateQuantity(EnterBridge.Models.OrderItem item, int qty)
+    {
+        if (qty > 0) item.Quantity = qty;
+    }
+
+    private void RejectItem(EnterBridge.Models.OrderItem item)
+    {
+        rejectingItem = item;
+        rejectReason = null;
+        showRejectModal = true;
+    }
+
+    private async Task ConfirmRejectItem()
+    {
+        if (rejectingItem != null)
+        {
+            rejectingItem.IsRejected = true;
+            rejectingItem.RejectionReason = rejectReason;
+            await Db.SaveChangesAsync();
+        }
+        showRejectModal = false;
+    }
+
+    private async Task RestoreItem(EnterBridge.Models.OrderItem item)
+    {
+        item.IsRejected = false;
+        item.RejectionReason = null;
+        await Db.SaveChangesAsync();
+    }
+
+    private async Task ApproveOrder()
+    {
+        if (order == null || string.IsNullOrWhiteSpace(reviewerName)) return;
+        saving = true;
+        order.Status = EnterBridge.Models.OrderStatus.Approved;
+        order.ReviewedBy = reviewerName.Trim();
+        order.UpdatedAt = DateTime.UtcNow;
+        await Db.SaveChangesAsync();
+        message = "Order approved!";
+        saving = false;
+    }
+
+    private async Task RejectOrder()
+    {
+        if (order == null || string.IsNullOrWhiteSpace(reviewerName)) return;
+        saving = true;
+        order.Status = EnterBridge.Models.OrderStatus.Rejected;
+        order.ReviewedBy = reviewerName.Trim();
+        order.UpdatedAt = DateTime.UtcNow;
+        await Db.SaveChangesAsync();
+        message = "Order rejected.";
+        saving = false;
+    }
+
+    private async Task Reorder()
+    {
+        if (order == null) return;
+        reordering = true;
+        foreach (var item in order.Items.Where(i => !i.IsRejected))
+        {
+            var product = await Api.GetProductAsync(item.ProductId);
+            var price = await Api.GetLatestPriceAsync(item.ProductId);
+            if (product != null && price != null)
+            {
+                Cart.AddItem(product, price, item.Quantity);
+            }
+        }
+        reordering = false;
+        Nav.NavigateTo("/cart");
+    }
+
+    private string GetStatusBadge(EnterBridge.Models.OrderStatus status) => status switch
+    {
+        EnterBridge.Models.OrderStatus.Submitted => "bg-warning text-dark",
+        EnterBridge.Models.OrderStatus.Approved => "bg-success",
+        EnterBridge.Models.OrderStatus.Rejected => "bg-danger",
+        _ => "bg-secondary"
+    };
+}

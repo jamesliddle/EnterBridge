@@ -1,0 +1,126 @@
+@page "/orders"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@inject EnterBridge.Data.AppDbContext Db
+@inject EnterBridge.Services.EnterBridgeApiClient Api
+@inject EnterBridge.Services.CartService Cart
+@inject NavigationManager Nav
+
+<PageTitle>Orders - EnterBridge</PageTitle>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <h2 class="mb-0">Orders</h2>
+    <div class="d-flex gap-2">
+        <select class="form-select form-select-sm" style="width: auto" @onchange="OnStatusFilter">
+            <option value="">All Statuses</option>
+            <option value="Submitted">Submitted</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+        </select>
+        <button class="btn btn-sm btn-outline-secondary" @onclick="LoadOrders">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </div>
+</div>
+
+@if (loading)
+{
+    <div class="text-center py-5"><div class="spinner-border" role="status"></div></div>
+}
+else if (!orders.Any())
+{
+    <div class="alert alert-info">No orders found. <a href="/">Start shopping</a>.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Order #</th>
+                    <th>Submitted By</th>
+                    <th>Date</th>
+                    <th>Items</th>
+                    <th class="text-end">Total</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var order in orders)
+                {
+                    <tr>
+                        <td><strong>#@order.Id</strong></td>
+                        <td>@order.SubmittedBy</td>
+                        <td>@order.CreatedAt.ToString("MMM dd, yyyy h:mm tt")</td>
+                        <td>@order.Items.Count items</td>
+                        <td class="text-end fw-bold">$@order.Total.ToString("N2")</td>
+                        <td>
+                            <span class="badge @GetStatusBadge(order.Status)">@order.Status</span>
+                        </td>
+                        <td class="text-nowrap">
+                            <a href="/orders/@order.Id" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-eye"></i> Review
+                            </a>
+                            <button class="btn btn-sm btn-outline-success ms-1" @onclick="() => Reorder(order)" disabled="@reordering">
+                                <i class="bi bi-arrow-repeat"></i> Reorder
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<EnterBridge.Models.Order> orders = [];
+    private bool loading = true;
+    private bool reordering;
+    private string? statusFilter;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrders();
+    }
+
+    private async Task LoadOrders()
+    {
+        loading = true;
+        var query = Db.Orders.Include(o => o.Items).AsQueryable();
+        if (!string.IsNullOrEmpty(statusFilter) && Enum.TryParse<EnterBridge.Models.OrderStatus>(statusFilter, out var status))
+            query = query.Where(o => o.Status == status);
+        orders = await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
+        loading = false;
+    }
+
+    private async Task OnStatusFilter(ChangeEventArgs e)
+    {
+        statusFilter = e.Value?.ToString();
+        await LoadOrders();
+    }
+
+    private async Task Reorder(EnterBridge.Models.Order order)
+    {
+        reordering = true;
+        foreach (var item in order.Items.Where(i => !i.IsRejected))
+        {
+            var product = await Api.GetProductAsync(item.ProductId);
+            var price = await Api.GetLatestPriceAsync(item.ProductId);
+            if (product != null && price != null)
+            {
+                Cart.AddItem(product, price, item.Quantity);
+            }
+        }
+        reordering = false;
+        Nav.NavigateTo("/cart");
+    }
+
+    private string GetStatusBadge(EnterBridge.Models.OrderStatus status) => status switch
+    {
+        EnterBridge.Models.OrderStatus.Submitted => "bg-warning text-dark",
+        EnterBridge.Models.OrderStatus.Approved => "bg-success",
+        EnterBridge.Models.OrderStatus.Rejected => "bg-danger",
+        _ => "bg-secondary"
+    };
+}

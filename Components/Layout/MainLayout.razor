@@ -1,0 +1,45 @@
+@inherits LayoutComponentBase
+@inject EnterBridge.Services.CartService Cart
+@implements IDisposable
+
+<nav class="navbar navbar-expand-md navbar-dark bg-dark px-3">
+    <a class="navbar-brand fw-bold" href="/">EnterBridge Procurement</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navContent">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navContent">
+        <ul class="navbar-nav me-auto">
+            <li class="nav-item"><a class="nav-link" href="/">Products</a></li>
+            <li class="nav-item"><a class="nav-link" href="/orders">Orders</a></li>
+        </ul>
+        <a class="btn btn-outline-light position-relative" href="/cart">
+            Cart
+            @if (Cart.Count > 0)
+            {
+                <span class="badge bg-warning text-dark ms-1">@Cart.Count</span>
+            }
+        </a>
+    </div>
+</nav>
+
+<main class="container-fluid px-3 px-md-4 py-3">
+    @Body
+</main>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">&#x1f5d9;</span>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Cart.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        Cart.OnChange -= StateHasChanged;
+    }
+}

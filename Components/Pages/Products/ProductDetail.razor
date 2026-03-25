@@ -1,0 +1,223 @@
+@page "/products/{ProductId:int}"
+@rendermode InteractiveServer
+@inject EnterBridge.Services.EnterBridgeApiClient Api
+@inject EnterBridge.Services.CartService Cart
+
+<PageTitle>Product Detail - EnterBridge</PageTitle>
+
+@if (loading)
+{
+    <div class="text-center py-5"><div class="spinner-border" role="status"></div></div>
+}
+else if (product == null)
+{
+    <div class="alert alert-warning">Product not found.</div>
+}
+else
+{
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/">Products</a></li>
+            <li class="breadcrumb-item active">@product.Name</li>
+        </ol>
+    </nav>
+
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h4>@product.Name</h4>
+                    <span class="badge bg-secondary mb-2">@product.Category</span>
+                    <p class="text-muted">@product.Description</p>
+                    <p class="small text-muted">SKU: @product.Sku</p>
+
+                    @if (latestPrice != null)
+                    {
+                        <div class="bg-light rounded p-3 mb-3">
+                            <div class="text-muted small">Current Price</div>
+                            <div class="fs-3 fw-bold text-primary">$@latestPrice.Amount.ToString("N2")</div>
+                            <div class="text-muted small">per @latestPrice.UnitOfMeasure</div>
+                        </div>
+
+                        @if (priceChange.HasValue)
+                        {
+                            <div class="mb-3">
+                                <span class="@(priceChange > 0 ? "text-danger" : "text-success")">
+                                    <i class="bi @(priceChange > 0 ? "bi-arrow-up" : "bi-arrow-down")"></i>
+                                    @Math.Abs(priceChange.Value).ToString("N1")% vs. 3 months ago
+                                </span>
+                            </div>
+                        }
+                    }
+
+                    <div class="d-flex gap-2 align-items-center">
+                        <input type="number" class="form-control" style="width: 80px" min="1" @bind="quantity" />
+                        <button class="btn btn-success flex-fill" @onclick="AddToCart" disabled="@(latestPrice == null)">
+                            <i class="bi bi-cart-plus"></i> Add to Cart
+                        </button>
+                    </div>
+                    @if (addedToCart)
+                    {
+                        <div class="alert alert-success mt-2 py-1 small">Added to cart!</div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-graph-up"></i> Price History</h5>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn @(timeRange == "3m" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SetRange("3m")'>3M</button>
+                        <button class="btn @(timeRange == "6m" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SetRange("6m")'>6M</button>
+                        <button class="btn @(timeRange == "1y" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SetRange("1y")'>1Y</button>
+                        <button class="btn @(timeRange == "all" ? "btn-primary" : "btn-outline-primary")" @onclick='() => SetRange("all")'>All</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    @if (loadingPrices)
+                    {
+                        <div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></div>
+                    }
+                    else if (prices.Any())
+                    {
+                        <!-- Simple visual price chart using CSS bars -->
+                        <div class="price-chart mb-3" style="height: 200px; display: flex; align-items: end; gap: 1px; overflow-x: auto;">
+                            @{
+                                var maxPrice = prices.Max(p => p.Amount);
+                                var minPrice = prices.Min(p => p.Amount);
+                                var range = maxPrice - minPrice;
+                                if (range == 0) range = 1;
+                            }
+                            @foreach (var price in prices.OrderBy(p => p.DateTime))
+                            {
+                                var height = range > 0 ? (int)(((price.Amount - minPrice) / range) * 160 + 20) : 100;
+                                <div title="@price.DateTime.ToString("MMM dd, yyyy"): $@price.Amount.ToString("N2")"
+                                     style="flex: 1; min-width: 3px; max-width: 12px; height: @(height)px; background: #0d6efd; border-radius: 2px 2px 0 0; cursor: pointer;"
+                                     class="price-bar">
+                                </div>
+                            }
+                        </div>
+                        <div class="d-flex justify-content-between text-muted small">
+                            <span>@prices.OrderBy(p => p.DateTime).First().DateTime.ToString("MMM yyyy")</span>
+                            <span>Low: $@minPrice.ToString("N2") | High: $@maxPrice.ToString("N2")</span>
+                            <span>@prices.OrderBy(p => p.DateTime).Last().DateTime.ToString("MMM yyyy")</span>
+                        </div>
+
+                        <!-- Price table -->
+                        <div class="table-responsive mt-3" style="max-height: 300px; overflow-y: auto;">
+                            <table class="table table-sm table-striped">
+                                <thead class="table-light sticky-top">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th class="text-end">Price</th>
+                                        <th class="text-end">Change</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var price in prices.OrderByDescending(p => p.DateTime))
+                                    {
+                                        var nextInList = prices.OrderByDescending(p => p.DateTime)
+                                            .SkipWhile(p => p != price).Skip(1).FirstOrDefault();
+                                        var change = nextInList != null ? price.Amount - nextInList.Amount : (decimal?)null;
+                                        <tr>
+                                            <td>@price.DateTime.ToString("MMM dd, yyyy")</td>
+                                            <td class="text-end">$@price.Amount.ToString("N2")</td>
+                                            <td class="text-end">
+                                                @if (change.HasValue && change != 0)
+                                                {
+                                                    <span class="@(change > 0 ? "text-danger" : "text-success")">
+                                                        @(change > 0 ? "+" : "")@change.Value.ToString("N2")
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted">No price data available for this period.</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int ProductId { get; set; }
+
+    private Product? product;
+    private PriceRecord? latestPrice;
+    private List<PriceRecord> prices = [];
+    private bool loading = true;
+    private bool loadingPrices;
+    private string timeRange = "all";
+    private int quantity = 1;
+    private bool addedToCart;
+    private decimal? priceChange;
+
+    protected override async Task OnInitializedAsync()
+    {
+        product = await Api.GetProductAsync(ProductId);
+        if (product != null)
+        {
+            latestPrice = await Api.GetLatestPriceAsync(ProductId);
+            await LoadPrices();
+        }
+        loading = false;
+    }
+
+    private async Task LoadPrices()
+    {
+        loadingPrices = true;
+        string? startDate = timeRange switch
+        {
+            "3m" => DateTime.UtcNow.AddMonths(-3).ToString("yyyy-MM-dd"),
+            "6m" => DateTime.UtcNow.AddMonths(-6).ToString("yyyy-MM-dd"),
+            "1y" => DateTime.UtcNow.AddYears(-1).ToString("yyyy-MM-dd"),
+            _ => null
+        };
+        prices = await Api.GetAllPricesAsync(ProductId, startDate);
+
+        // Calculate 3-month price change
+        if (prices.Count > 1)
+        {
+            var sorted = prices.OrderByDescending(p => p.DateTime).ToList();
+            var current = sorted.First();
+            var threeMonthsAgo = sorted.FirstOrDefault(p => p.DateTime <= DateTime.UtcNow.AddMonths(-3));
+            if (threeMonthsAgo != null && threeMonthsAgo.Amount != 0)
+                priceChange = ((current.Amount - threeMonthsAgo.Amount) / threeMonthsAgo.Amount) * 100;
+        }
+
+        loadingPrices = false;
+    }
+
+    private async Task SetRange(string range)
+    {
+        timeRange = range;
+        await LoadPrices();
+    }
+
+    private void AddToCart()
+    {
+        if (product != null && latestPrice != null)
+        {
+            Cart.AddItem(product, latestPrice, quantity);
+            addedToCart = true;
+            _ = Task.Delay(2000).ContinueWith(_ =>
+            {
+                addedToCart = false;
+                InvokeAsync(StateHasChanged);
+            });
+        }
+    }
+}
